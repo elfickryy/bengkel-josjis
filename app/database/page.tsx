@@ -82,7 +82,7 @@ export default function DatabasePage() {
             v.trim().replace(/(^"|"$)/g, '').replace(/""/g, '"')
           );
           
-          let rowObj: any = {};
+          const rowObj: any = {};
           headers.forEach((h, idx) => {
             if (values[idx] !== undefined && values[idx] !== "") {
               rowObj[h] = values[idx];

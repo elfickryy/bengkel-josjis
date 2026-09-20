@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeft, Search, History, Calendar, User, Wrench, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Search, History, Calendar, User, Wrench, ShieldAlert, Printer } from "lucide-react";
 import Link from "next/link";
+import { printReceipt } from "@/utils/printer";
 
 export default function RiwayatServisPage() {
   const [allRiwayat, setAllRiwayat] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [printingId, setPrintingId] = useState<string | number | null>(null);
 
   // Load semua riwayat otomatis begitu halaman dibuka (Tanpa sorting ketat agar tidak error)
   const loadAllRiwayat = async () => {
@@ -74,39 +76,73 @@ export default function RiwayatServisPage() {
     return plat.includes(query) || nama.includes(query) || nota.includes(query) || mekanik.includes(query);
   });
 
+  const cetakThermal = async (trx: any) => {
+    const savedConfig = localStorage.getItem("bengkel_config");
+    const config = savedConfig ? JSON.parse(savedConfig) : {};
+    const transactionId = trx.id || trx.nomor_nota;
+    setPrintingId(transactionId);
+
+    try {
+      const success = await printReceipt({
+        storeName: config.namaBengkel || "BENGKEL JOSJIS",
+        storeAddress: config.alamatBengkel || "Jl. Raya Bengkel No. 32",
+        storePhone: config.teleponBengkel || "",
+        notaNo: trx.nomor_nota,
+        date: new Date(trx.created_at || trx.tanggal || Date.now()).toLocaleString("id-ID"),
+        cashier: trx.mekanik || "Admin",
+        plateNumber: trx.plat_nomor || "-",
+        items: (trx.items || []).map((item: any) => ({
+          name: item.nama_item,
+          qty: Number(item.qty || 0),
+          price: Number(item.harga_satuan || 0),
+          subtotal: Number(item.subtotal || 0),
+        })),
+        total: Number(trx.total_belanja || 0),
+        cash: Number(trx.total_belanja || 0),
+        change: 0,
+        paymentMethod: trx.metode_bayar || "-",
+        footerMessage: config.pesanStruk || "Terima Kasih Atas Kunjungan Anda!",
+      });
+
+      if (!success) alert("Printer thermal tidak terdeteksi. Silakan cek menu Setting.");
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4">
         
         {/* HEADER */}
-        <div className="flex items-center gap-4">
-          <Link href="/" className="p-2 border border-slate-800 bg-slate-900 rounded-lg hover:bg-slate-800 text-slate-400 transition">
+        <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white/80 p-3 shadow-sm">
+          <Link href="/" className="rounded-xl border border-stone-300 bg-stone-50 p-2 text-stone-600 transition hover:bg-stone-100">
             <ArrowLeft size={18} />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-              <History className="text-cyan-400" size={24} /> Riwayat & Rekam Jejak Servis
+            <h1 className="flex items-center gap-2 text-lg font-bold text-stone-900 md:text-xl">
+              <History className="text-violet-600" size={21} /> Riwayat & Rekam Jejak Servis
             </h1>
-            <p className="text-sm text-slate-500">Daftar seluruh transaksi masuk. Cari berdasarkan nama, plat nomor, nota, atau mekanik.</p>
+            <p className="text-[11px] text-stone-500">Cari transaksi berdasarkan nama, plat nomor, nota, atau mekanik.</p>
           </div>
         </div>
 
         {/* KOLOM PENCARIAN PINTAR */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white/80 p-3 shadow-sm">
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
             <input
               type="text"
               placeholder="Cari berdasarkan Plat Nomor, Nama Pelanggan, No. Nota, atau Mekanik..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-medium"
+              className="w-full rounded-xl border border-stone-300 bg-stone-50 py-2.5 pl-10 pr-4 text-xs font-medium text-stone-800 outline-none focus:border-violet-400"
             />
           </div>
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2.5 rounded-xl transition"
+              className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-xs text-stone-700 transition hover:bg-stone-100"
             >
               Reset
             </button>
@@ -114,63 +150,70 @@ export default function RiwayatServisPage() {
         </div>
 
         {/* DAFTAR RIWAYAT */}
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {loading ? (
             <p className="text-center text-slate-500 py-16 text-sm animate-pulse">Memuat seluruh data riwayat servis...</p>
           ) : filteredRiwayat.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 p-12 rounded-2xl text-center text-slate-500 text-sm space-y-2">
+            <div className="rounded-2xl border border-stone-200 bg-white/80 p-8 text-center text-sm text-stone-500 shadow-sm space-y-2 xl:col-span-2">
               <ShieldAlert className="mx-auto text-slate-600" size={32} />
               <p>Tidak ada riwayat servis yang cocok dengan kata kunci <span className="text-cyan-400 font-bold">"{searchQuery}"</span>.</p>
             </div>
           ) : (
             filteredRiwayat.map((trx) => (
-              <div key={trx.id || trx.nomor_nota} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 hover:border-slate-700 transition">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+              <div key={trx.id || trx.nomor_nota} className="space-y-3 rounded-2xl border border-stone-200 bg-white/85 p-3 shadow-sm transition hover:shadow-md">
+                <div className="flex flex-col items-start justify-between gap-2 border-b border-stone-200 pb-2 sm:flex-row sm:items-center">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-xs font-mono font-bold uppercase">
+                      <span className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-mono font-bold uppercase text-violet-700">
                         {trx.plat_nomor || "-"}
                       </span>
-                      <span className="text-xs text-slate-400 font-mono">({trx.nomor_nota})</span>
+                      <span className="font-mono text-[10px] text-stone-500">({trx.nomor_nota})</span>
                     </div>
-                    <h3 className="text-sm font-bold text-slate-100 mt-2 flex items-center gap-1.5">
-                      <User size={14} className="text-blue-400" /> Pelanggan: <span className="text-blue-300">{trx.nama_pelanggan || "Umum"}</span>
+                    <h3 className="mt-1 flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                      <User size={13} className="text-violet-600" /> Pelanggan: <span className="text-violet-700">{trx.nama_pelanggan || "Umum"}</span>
                     </h3>
                   </div>
-                  <div className="text-right text-xs text-slate-400 space-y-1">
+                  <div className="space-y-0.5 text-right text-[10px] text-stone-500">
                     <p className="flex items-center gap-1 justify-end">
-                      <Calendar size={13} className="text-slate-500" /> {trx.created_at ? new Date(trx.created_at).toLocaleString("id-ID") : (trx.tanggal ? new Date(trx.tanggal).toLocaleString("id-ID") : "Baru saja")}
+                      <Calendar size={12} className="text-stone-400" /> {trx.created_at ? new Date(trx.created_at).toLocaleString("id-ID") : (trx.tanggal ? new Date(trx.tanggal).toLocaleString("id-ID") : "Baru saja")}
                     </p>
                     <p className="flex items-center gap-1 justify-end">
-                      <Wrench size={13} className="text-slate-500" /> Mekanik: <span className="text-cyan-400 font-bold">{trx.mekanik || "-"}</span>
+                      <Wrench size={12} className="text-stone-400" /> Mekanik: <span className="font-bold text-teal-700">{trx.mekanik || "-"}</span>
                     </p>
-                    <p className="text-[11px] text-emerald-400">Status: {trx.status_servis || "Selesai"}</p>
+                    <p className="text-[10px] text-emerald-700">Status: {trx.status_servis || "Selesai"}</p>
                   </div>
                 </div>
 
                 {/* Rincian Item */}
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rincian Onderdil & Jasa:</p>
-                  <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 divide-y divide-slate-900">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">Rincian Onderdil & Jasa</p>
+                  <div className="max-h-32 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 px-3 divide-y divide-stone-200">
                     {trx.items?.map((item: any, idx: number) => (
-                      <div key={idx} className="py-2 first:pt-0 last:pb-0 flex justify-between items-center text-xs">
+                      <div key={idx} className="flex items-center justify-between py-1.5 text-[11px]">
                         <div>
-                          <p className="font-medium text-slate-200">{item.nama_item}</p>
-                          <p className="text-[10px] text-slate-500">{item.qty}x @Rp {Number(item.harga_satuan).toLocaleString()}</p>
+                          <p className="font-medium text-stone-800">{item.nama_item}</p>
+                          <p className="text-[10px] text-stone-500">{item.qty}x @Rp {Number(item.harga_satuan).toLocaleString()}</p>
                         </div>
-                        <span className="font-bold text-orange-400">Rp {Number(item.subtotal).toLocaleString()}</span>
+                        <span className="font-bold text-amber-700">Rp {Number(item.subtotal).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-xs">
-                  <span className="text-slate-400">Metode Bayar: <strong className="text-slate-200">{trx.metode_bayar}</strong></span>
+                <div className="flex items-center justify-between border-t border-stone-200 pt-2 text-[11px]">
+                  <span className="text-stone-500">Bayar: <strong className="text-stone-800">{trx.metode_bayar}</strong></span>
                   <div className="text-right">
-                    <span className="text-slate-400 mr-2">Total Transaksi:</span>
-                    <span className="text-sm font-extrabold text-emerald-400">Rp {Number(trx.total_belanja).toLocaleString()}</span>
+                    <span className="mr-2 text-stone-500">Total:</span>
+                    <span className="text-sm font-extrabold text-emerald-700">Rp {Number(trx.total_belanja).toLocaleString()}</span>
                   </div>
                 </div>
+                <button
+                  onClick={() => cetakThermal(trx)}
+                  disabled={printingId === (trx.id || trx.nomor_nota)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-[10px] font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Printer size={14} /> {printingId === (trx.id || trx.nomor_nota) ? "Mengirim ke printer..." : "Cetak Thermal"}
+                </button>
               </div>
             ))
           )}

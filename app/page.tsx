@@ -3,9 +3,14 @@ import { useState, useEffect } from "react";
 import { getStokBarang, simpanTransaksi } from "@/lib/api";
 import { 
   ShoppingCart, Trash2, CheckCircle, RefreshCw, 
-  Search, Package, BarChart3, Wrench, Database, Plus, Minus, Settings, CreditCard, QrCode, History, UserCheck, Printer 
+  Search, Package, BarChart3, Database, Plus, Minus, Settings, CreditCard, QrCode, History, Printer
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
+
+// 1. IMPORT FITUR PRINTER BLUETOOTH YANG BARU DIBUAT
+import PrinterButton from "@/components/PrinterButton";
+import { printReceipt } from "@/utils/printer";
 
 export default function KasirPage() {
   const [stokList, setStokList] = useState<any[]>([]);
@@ -25,12 +30,13 @@ export default function KasirPage() {
   const [metodeBayar, setMetodeBayar] = useState("CASH");
   
   // Input Mekanik & Opsi Cetak Struk
-  const [mekanik, setMekanik] = useState("Budi");
+  const [mekanik, setMekanik] = useState("");
   const [autoCetak, setAutoCetak] = useState(true);
 
   const [uangDiterima, setUangDiterima] = useState<string>("");
   const [selectedBank, setSelectedBank] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showQrisFullscreen, setShowQrisFullscreen] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -59,6 +65,7 @@ export default function KasirPage() {
 
     // Load Konfigurasi Bank & QRIS dari Setting
     const savedConfig = localStorage.getItem("bengkel_config");
+    const savedPrinter = localStorage.getItem("bengkel_printer_config");
     if (savedConfig) {
       const config = JSON.parse(savedConfig);
       setBengkelConfig(config);
@@ -69,6 +76,15 @@ export default function KasirPage() {
     } else {
       setBankList([{ bank: "BCA", norek: "1234567890", an: "Bengkel Jaya" }]);
       setSelectedBank("BCA - 1234567890 (a/n Bengkel Jaya)");
+    }
+
+    if (savedPrinter) {
+      try {
+        const printerConfig = JSON.parse(savedPrinter);
+        setAutoCetak(printerConfig.autoPrint !== false);
+      } catch {
+        setAutoCetak(true);
+      }
     }
   }, []);
 
@@ -141,88 +157,49 @@ export default function KasirPage() {
   const nominalUang = Number(uangDiterima) || 0;
   const kembalian = nominalUang >= totalBelanja ? nominalUang - totalBelanja : 0;
 
-  // Fungsi Cetak Struk Thermal Khusus Printer Bluetooth / Thermal Browser (Mencakup Nama Mekanik)
-  const cetakStrukThermal = (nomorNota: string, finalMetode: string, namaMekanik: string) => {
-    const namaToko = bengkelConfig.namaBengkel || "KASIR BENGKEL MOTOR";
-    const alamatToko = bengkelConfig.alamatBengkel || "Jl. Raya Bengkel No. 32";
-    const telpToko = bengkelConfig.teleponBengkel || "08123456789";
-    const pesanPenutup = bengkelConfig.pesanStruk || "Terima Kasih Atas Kunjungan Anda!";
+  // 2. LOGIKA CETAK STRUK BLUETOOTH BARU (Menggantikan window.print lama)
+  const cetakStrukBluetooth = async (nomorNota: string, finalMetode: string, namaMekanik: string) => {
+    const dataStruk = {
+      storeName: bengkelConfig.namaBengkel || "BENGKEL JOSJIS",
+      storeAddress: bengkelConfig.alamatBengkel || "Jl. Raya Bengkel No. 32",
+      storePhone: bengkelConfig.teleponBengkel || "",
+      notaNo: nomorNota,
+      date: new Date().toLocaleString("id-ID"),
+      cashier: namaMekanik || "Admin",
+      plateNumber: platNomor.trim().toUpperCase() || "-",
+      items: cart.map(item => ({
+        name: item.nama,
+        qty: item.qty,
+        price: Number(item.harga_jual),
+        subtotal: Number(item.subtotal)
+      })),
+      total: totalBelanja,
+      // Kalau Transfer/QRIS anggap uang pas, kalau CASH pakai nominal uang dari state
+      cash: finalMetode.includes("CASH") ? nominalUang : totalBelanja,
+      change: finalMetode.includes("CASH") ? kembalian : 0,
+      paymentMethod: finalMetode,
+      footerMessage: bengkelConfig.pesanStruk || "Terima Kasih Atas Kunjungan Anda!",
+    };
 
-    const printWindow = window.open('', '_blank', 'width=300,height=600');
-    if (!printWindow) {
-      alert("Gagal membuka jendela cetak. Izinkan pop-up pada browser Anda.");
-      return;
-    }
+    // Eksekusi kirim ke printer Bluetooth
+    return await printReceipt(dataStruk);
+  };
 
-    const htmlContent = `
-      <html>
-        <head>
-          <title>Struk - ${nomorNota}</title>
-          <style>
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              width: 58mm;
-              margin: 0;
-              padding: 5px;
-              color: #000;
-              font-size: 11px;
-            }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .line { border-bottom: 1px dashed #000; margin: 5px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            table { width: 100%; font-size: 11px; border-collapse: collapse; }
-            th, td { text-align: left; padding: 2px 0; }
-            .right { text-align: right; }
-          </style>
-        </head>
-        <body>
-          <div class="center bold" style="font-size: 13px;">${namaToko}</div>
-          <div class="center">${alamatToko}</div>
-          <div class="center">Telp: ${telpToko}</div>
-          <div class="line"></div>
-          <div>No. Nota: ${nomorNota}</div>
-          <div>Tanggal: ${new Date().toLocaleString("id-ID")}</div>
-          <div>Pelanggan: ${namaPelanggan.trim() || "Umum"}</div>
-          <div>Plat No: ${platNomor.trim().toUpperCase() || "-"}</div>
-          <div>Mekanik: ${namaMekanik}</div>
-          <div class="line"></div>
-          <table>
-            ${cart.map(item => `
-              <tr>
-                <td colspan="2">${item.nama}</td>
-              </tr>
-              <tr>
-                <td>${item.qty} x ${item.harga_jual.toLocaleString()}</td>
-                <td class="right">${item.subtotal.toLocaleString()}</td>
-              </tr>
-            `).join('')}
-          </table>
-          <div class="line"></div>
-          <div class="flex bold">
-            <span>TOTAL:</span>
-            <span>Rp ${totalBelanja.toLocaleString()}</span>
-          </div>
-          <div>Metode: ${finalMetode}</div>
-          ${finalMetode.includes("CASH") ? `
-            <div class="flex"><span>Tunai:</span><span>Rp ${nominalUang.toLocaleString()}</span></div>
-            <div class="flex"><span>Kembalian:</span><span>Rp ${kembalian.toLocaleString()}</span></div>
-          ` : ""}
-          <div class="line"></div>
-          <div class="center" style="margin-top: 8px;">${pesanPenutup}</div>
-          <div class="center" style="font-size: 9px; margin-top: 4px;">Powered by EL Tech</div>
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(() => window.close(), 500);
-            }
-          </script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+  // Data Struk Preview untuk tombol Pairing Printer sebelum transaksi
+  const previewDataStruk = {
+    storeName: bengkelConfig.namaBengkel || "BENGKEL JOSJIS",
+    storeAddress: bengkelConfig.alamatBengkel || "Jl. Raya Bengkel No. 32",
+    storePhone: bengkelConfig.teleponBengkel || "",
+    notaNo: "TES-PRINTER",
+    date: new Date().toLocaleString("id-ID"),
+    cashier: "Admin",
+    plateNumber: platNomor || "-",
+    items: cart.length > 0 ? cart.map(item => ({ name: item.nama, qty: item.qty, price: Number(item.harga_jual), subtotal: Number(item.subtotal) })) : [{ name: "Tes Print 1", qty: 1, price: 1000, subtotal: 1000 }],
+    total: totalBelanja || 1000,
+    cash: nominalUang || 1000,
+    change: kembalian || 0,
+    paymentMethod: "TEST PRINT",
+    footerMessage: bengkelConfig.pesanStruk || "Terima Kasih Atas Kunjungan Anda!",
   };
 
   const handleCheckout = async () => {
@@ -256,7 +233,7 @@ export default function KasirPage() {
       totalBelanja,
       metodeBayar: finalMetodeBayar,
       items: cart,
-      mekanik: currentMekanik, // Mekanik kini ikut dikirim ke database
+      mekanik: currentMekanik, 
     };
 
     const res = await simpanTransaksi(payload);
@@ -265,9 +242,12 @@ export default function KasirPage() {
     if (res.status === "success") {
       alert(`✅ Transaksi Berhasil! No. Nota: ${nomorNota}`);
       
-      // Cetak struk otomatis & sertakan nama mekanik
+      // 3. CETAK STRUK BLUETOOTH OTOMATIS
       if (autoCetak) {
-        cetakStrukThermal(nomorNota, finalMetodeBayar, currentMekanik);
+        const printSuccess = await cetakStrukBluetooth(nomorNota, finalMetodeBayar, currentMekanik);
+        if (!printSuccess) {
+          alert("Transaksi tersimpan, tetapi struk belum tercetak. Anda dapat mencetak ulang dari menu Riwayat.");
+        }
       }
 
       setCart([]);
@@ -281,65 +261,68 @@ export default function KasirPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-6 flex flex-col justify-between gap-6 font-sans">
-      
-      <div className="flex flex-col gap-6">
-        {/* HEADER NAVIGASI */}
-        <header className="flex flex-col md:flex-row justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <Wrench className="text-blue-500" size={22} /> KASIR BENGKEL JOSJIS!!!
-            </h1>
-            <p className="text-xs text-slate-500">Sistem POS JOSJIS • by: <span className="text-blue-400 font-medium">EL Tech</span></p>
+    <main className="min-h-screen overflow-hidden bg-transparent text-stone-800">
+      <div className="flex min-h-[calc(100vh-1.5rem)] flex-col gap-4">
+        <header className="flex flex-col gap-4 rounded-[28px] border border-stone-200 bg-white/85 p-4 shadow-[0_18px_45px_rgba(61,52,45,0.08)] backdrop-blur-md md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#101b38] shadow-[0_8px_18px_rgba(44,61,105,0.22)] ring-1 ring-white/70">
+              <Image src="/josjis-mark.svg" alt="Logo Bengkel Josjis" width={48} height={48} priority className="h-full w-full object-cover" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-stone-900 md:text-xl">
+                POS Bengkel Josjis
+              </h1>
+              <p className="text-[11px] text-stone-500">
+                Program Kasir Bengkel by: • <span className="font-medium text-stone-700">EL Tech</span>
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/riwayat" className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition text-cyan-400">
-              <History size={15} /> Riwayat
+            <Link href="/riwayat" className="flex items-center gap-1.5 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-[11px] font-medium text-stone-700 transition hover:bg-stone-100">
+              <History size={14} /> Riwayat
             </Link>
-            <Link href="/pembelian" className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition text-slate-200">
-              <Package size={15} className="text-emerald-400" /> Gudang
+            <Link href="/pembelian" className="flex items-center gap-1.5 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-[11px] font-medium text-stone-700 transition hover:bg-stone-100">
+              <Package size={14} className="text-stone-700" /> Gudang
             </Link>
-            <Link href="/rekap" className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition text-slate-200">
-              <BarChart3 size={15} className="text-cyan-400" /> Rekap
+            <Link href="/rekap" className="flex items-center gap-1.5 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-[11px] font-medium text-stone-700 transition hover:bg-stone-100">
+              <BarChart3 size={14} className="text-stone-700" /> Rekap
             </Link>
-            <Link href="/database" className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition text-slate-200">
-              <Database size={15} className="text-blue-400" /> Database
+            <Link href="/database" className="flex items-center gap-1.5 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-[11px] font-medium text-stone-700 transition hover:bg-stone-100">
+              <Database size={14} className="text-stone-700" /> Database
             </Link>
-            <Link href="/setting" className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition text-slate-200" title="Pengaturan Bengkel">
-              <Settings size={15} className="text-orange-400" /> Setting
+            <Link href="/setting" className="flex items-center gap-1.5 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-[11px] font-medium text-stone-700 transition hover:bg-stone-100" title="Pengaturan Bengkel">
+              <Settings size={14} className="text-stone-700" /> Setting
             </Link>
-            <button onClick={loadData} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition text-slate-300" title="Refresh Stok">
-              <RefreshCw size={15} className={loading ? "animate-spin text-blue-500" : ""} />
+            <button onClick={loadData} className="rounded-xl border border-stone-300 bg-stone-50 p-2.5 text-stone-700 transition hover:bg-stone-100" title="Refresh Stok">
+              <RefreshCw size={15} className={loading ? "animate-spin text-stone-700" : ""} />
             </button>
           </div>
         </header>
 
-        {/* GRID UTAMA */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* KOLOM KIRI: KATALOG (TABEL RINGKAS) & JASA (7 Kolom) */}
-          <div className="lg:col-span-7 bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col gap-4">
-            
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
-              <h2 className="font-semibold text-sm text-slate-200">Katalog Onderdil & Jasa Servis</h2>
-              <div className="relative w-full sm:w-60">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={15} />
+        <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-4 lg:grid-cols-[1.48fr_0.92fr]">
+          <section className="flex min-h-0 h-full flex-col gap-4 rounded-[30px] border border-stone-200 bg-white/80 p-4 shadow-[0_18px_45px_rgba(61,52,45,0.08)] backdrop-blur-md">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-sm font-bold tracking-wide text-stone-900">Katalog Onderdil</h2>
+                <p className="mt-0.5 text-[10px] text-stone-500">Pilih barang untuk memasukkan ke transaksi</p>
+              </div>
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" size={15} />
                 <input
                   type="text"
                   placeholder="Cari nama part / kode..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50 py-2.5 pl-9 pr-3 text-xs text-stone-800 outline-none transition focus:border-stone-500"
                 />
               </div>
             </div>
 
-            {/* Panel Jasa Servis Dinamis */}
-            <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl flex flex-col gap-2.5">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  🛠️ Jasa Servis Cepat:
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">
+                  <span className="text-stone-800">✦</span> Jasa Servis Cepat
                 </span>
                 <button
                   onClick={() => {
@@ -354,24 +337,21 @@ export default function KasirPage() {
                     localStorage.setItem("bengkel_custom_jasa", JSON.stringify(updated));
                     setCustomJasaList(updated);
                   }}
-                  className="text-[11px] bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-lg transition font-medium"
+                  className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-[10px] font-medium text-stone-700 transition hover:bg-stone-100"
                 >
                   + Tambah Jasa
                 </button>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-1 items-center">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {customJasaList.map((jasa, idx) => (
-                  <div 
+                  <div
                     key={idx}
-                    className="group relative bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-lg px-2.5 py-1.5 flex items-center gap-2.5 shrink-0 transition"
+                    className="flex shrink-0 items-center gap-2 rounded-xl border border-stone-200 bg-white px-2.5 py-2 shadow-sm"
                   >
-                    <button
-                      onClick={() => addToCart({ nama: `Jasa: ${jasa.nama}`, id: null }, "JASA", jasa.harga)}
-                      className="text-left flex flex-col"
-                    >
-                      <span className="text-xs font-medium text-slate-200">{jasa.nama}</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">Rp {jasa.harga.toLocaleString()}</span>
+                    <button onClick={() => addToCart({ nama: `Jasa: ${jasa.nama}`, id: null }, "JASA", jasa.harga)} className="text-left">
+                      <span className="block text-[11px] font-medium text-stone-800">{jasa.nama}</span>
+                      <span className="text-[10px] font-bold text-emerald-700">Rp {jasa.harga.toLocaleString()}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -380,7 +360,7 @@ export default function KasirPage() {
                         localStorage.setItem("bengkel_custom_jasa", JSON.stringify(updated));
                         setCustomJasaList(updated);
                       }}
-                      className="text-slate-500 hover:text-red-400 text-xs transition"
+                      className="text-xs text-stone-500 transition hover:text-red-600"
                     >
                       ✕
                     </button>
@@ -389,268 +369,276 @@ export default function KasirPage() {
               </div>
             </div>
 
-            {/* TABEL RINGKAS ONDERDIL */}
-            <div className="flex-1 overflow-hidden border border-slate-800 rounded-xl bg-slate-950/40">
+            <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-50 to-violet-50/40">
               {loading ? (
-                <p className="text-center text-slate-500 py-12 text-xs animate-pulse">Memuat daftar onderdil...</p>
+                <p className="py-12 text-center text-xs text-stone-500 animate-pulse">Memuat daftar onderdil...</p>
               ) : filteredStok.length === 0 ? (
-                <p className="text-center text-slate-500 py-12 text-xs">Tidak ada onderdil ditemukan.</p>
+                <p className="py-12 text-center text-xs text-stone-500">Tidak ada onderdil ditemukan.</p>
               ) : (
-                <div className="max-h-[380px] overflow-y-auto">
-                  <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="bg-slate-900 text-slate-400 sticky top-0 border-b border-slate-800">
-                      <tr>
-                        <th className="px-3 py-2.5 font-medium">Nama Onderdil</th>
-                        <th className="px-3 py-2.5 font-medium">Kategori</th>
-                        <th className="px-3 py-2.5 font-medium text-center">Stok</th>
-                        <th className="px-3 py-2.5 font-medium text-right">Harga (Rp)</th>
-                        <th className="px-3 py-2.5 font-medium text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/50">
-                      {filteredStok.map((item) => {
-                        const habis = item.stok <= 0;
-                        return (
-                          <tr key={item.id} className={`hover:bg-slate-800/40 transition ${habis ? "opacity-40" : ""}`}>
-                            <td className="px-3 py-2.5 font-medium text-slate-200">{item.nama_part}</td>
-                            <td className="px-3 py-2.5 text-slate-400"><span className="bg-slate-800 px-2 py-0.5 rounded text-[10px]">{item.kategori || "Umum"}</span></td>
-                            <td className="px-3 py-2.5 text-center font-bold">
-                              <span className={item.stok <= 3 ? "text-red-400" : "text-emerald-400"}>{item.stok}</span>
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-semibold text-orange-400">Rp {Number(item.harga_jual).toLocaleString()}</td>
-                            <td className="px-3 py-2.5 text-center">
-                              <button
-                                disabled={habis}
-                                onClick={() => addToCart(item, "PART")}
-                                className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-2.5 py-1 rounded-lg transition font-medium text-[11px] disabled:pointer-events-none"
-                              >
-                                + Masuk
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="h-[420px] overflow-y-auto p-2 sm:p-3 lg:h-[455px]">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {filteredStok.map((item) => {
+                      const habis = Number(item.stok) <= 0;
+                      const stokRendah = Number(item.stok) <= 3;
+                      return (
+                        <article
+                          key={item.id}
+                          role="button"
+                          tabIndex={habis ? -1 : 0}
+                          onClick={() => !habis && addToCart(item, "PART")}
+                          onKeyDown={(event) => {
+                            if (!habis && (event.key === "Enter" || event.key === " ")) {
+                              event.preventDefault();
+                              addToCart(item, "PART");
+                            }
+                          }}
+                          className={`group flex min-w-0 flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 shadow-sm transition ${habis ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-300"}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="mb-2 flex items-start justify-between gap-2">
+                              <span className="rounded-md bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">{item.kategori || "Umum"}</span>
+                              <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${habis ? "bg-red-50 text-red-700" : stokRendah ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+                                {habis ? "Habis" : `${item.stok} stok`}
+                              </span>
+                            </div>
+                            <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-4 text-stone-800">{item.nama_part}</h3>
+                            <p className="mt-1 truncate font-mono text-[9px] text-stone-400">{item.kode_part || "Tanpa kode"}</p>
+                          </div>
+                          <div className="mt-3 border-t border-stone-100 pt-2">
+                            <span className="truncate text-xs font-black text-amber-700">Rp {Number(item.harga_jual).toLocaleString()}</span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="flex min-h-0 h-full flex-col rounded-[30px] border border-stone-200 bg-white/85 p-4 shadow-[0_18px_45px_rgba(61,52,45,0.08)] backdrop-blur-md">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+                <ShoppingCart size={16} className="text-stone-700" /> Keranjang Belanja
+              </h2>
+              <div className="flex items-center gap-2">
+                {cart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!confirm("Kosongkan semua item di keranjang?")) return;
+                      setCart([]);
+                      setUangDiterima("");
+                    }}
+                    className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-2 text-[10px] font-semibold text-red-700 transition hover:bg-red-100"
+                  >
+                    Kosongkan
+                  </button>
+                )}
+                <PrinterButton testData={previewDataStruk} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder="Nama Pelanggan"
+                value={namaPelanggan}
+                onChange={(e) => setNamaPelanggan(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs text-stone-800 outline-none transition focus:border-stone-500"
+              />
+              <input
+                type="text"
+                placeholder="Plat Nomor"
+                value={platNomor}
+                onChange={(e) => setPlatNomor(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs uppercase text-stone-800 outline-none transition focus:border-stone-500"
+              />
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-stone-500">Nama Mekanik</label>
+              <input
+                type="text"
+                placeholder="Cth: Budi / Joko"
+                value={mekanik}
+                onChange={(e) => setMekanik(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs text-stone-800 outline-none transition focus:border-stone-500"
+              />
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 p-2">
+              {cart.length === 0 ? (
+                <p className="py-8 text-center text-xs text-stone-500">Keranjang masih kosong.</p>
+              ) : (
+                <div className="max-h-[calc(100vh-510px)] space-y-2 overflow-y-auto pr-1">
+                  {cart.map((item, idx) => {
+                    const key = item.jenis === "PART" ? item.id : item.cartItemId;
+                    return (
+                      <div key={idx} className="flex items-center justify-between gap-2 rounded-xl border border-stone-300 bg-white p-2.5 shadow-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[11px] font-medium text-stone-800">{item.nama}</p>
+                          <p className="text-[10px] text-stone-500">{item.qty}x @Rp {Number(item.harga_jual).toLocaleString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-amber-700">Rp {Number(item.subtotal).toLocaleString()}</span>
+                          <div className="flex items-center gap-1 rounded-lg border border-stone-300 bg-stone-50 p-0.5">
+                            <button onClick={() => updateQty(key, -1)} className="rounded p-1 text-stone-600 transition hover:bg-stone-100"><Minus size={10} /></button>
+                            <span className="w-4 text-center text-[10px] font-bold text-stone-700">{item.qty}</span>
+                            <button onClick={() => updateQty(key, 1)} className="rounded p-1 text-stone-600 transition hover:bg-stone-100"><Plus size={10} /></button>
+                          </div>
+                          <button onClick={() => removeFromCart(key)} className="rounded p-1 text-red-600 transition hover:bg-red-50"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-          </div>
-
-          {/* KOLOM KANAN: KERANJANG & PEMBAYARAN OPTIMAL (5 Kolom) */}
-          <div className="lg:col-span-5 bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
-            <div className="space-y-4">
-              <h2 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                <ShoppingCart size={16} className="text-blue-400" /> Keranjang & Pembayaran
-              </h2>
-
-              {/* Input Data Pelanggan, Plat & Mekanik */}
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Nama Pelanggan"
-                  value={namaPelanggan}
-                  onChange={(e) => setNamaPelanggan(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Plat Nomor"
-                  value={platNomor}
-                  onChange={(e) => setPlatNomor(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 uppercase focus:outline-none focus:border-blue-500 font-bold"
-                />
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-stone-500">Metode bayar</span>
+                <div className="flex gap-1.5">
+                  {["CASH", "TRANSFER", "QRIS"].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMetodeBayar(m)}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition ${
+                        metodeBayar === m ? "bg-stone-900 text-white" : "border border-stone-300 bg-white text-stone-700"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div>
-                <label className="text-[10px] text-slate-400 mb-1 block flex items-center gap-1"><UserCheck size={11} /> Nama Mekanik:</label>
-                <input
-                  type="text"
-                  placeholder="Cth: Budi / Joko"
-                  value={mekanik}
-                  onChange={(e) => setMekanik(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-medium text-cyan-400"
-                />
-              </div>
-
-              {/* Daftar Item di Keranjang */}
-              <div className="max-h-36 overflow-y-auto space-y-2 pr-1 border-t border-b border-slate-800 py-2.5">
-                {cart.length === 0 ? (
-                  <p className="text-center text-slate-600 text-xs py-6">Keranjang masih kosong.</p>
-                ) : (
-                  cart.map((item, idx) => {
-                    const key = item.jenis === "PART" ? item.id : item.cartItemId;
-                    return (
-                      <div key={idx} className="bg-slate-950/60 border border-slate-800 p-2 rounded-xl flex justify-between items-center text-xs">
-                        <div className="max-w-[140px]">
-                          <p className="font-medium text-slate-200 truncate">{item.nama}</p>
-                          <p className="text-[10px] text-slate-500">{item.qty}x @Rp {Number(item.harga_jual).toLocaleString()}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-orange-400">Rp {Number(item.subtotal).toLocaleString()}</span>
-                          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-                            <button onClick={() => updateQty(key, -1)} className="hover:bg-slate-800 p-1 rounded text-slate-300"><Minus size={10} /></button>
-                            <span className="font-bold w-4 text-center text-[11px]">{item.qty}</span>
-                            <button onClick={() => updateQty(key, 1)} className="hover:bg-slate-800 p-1 rounded text-slate-300"><Plus size={10} /></button>
-                          </div>
-                          <button onClick={() => removeFromCart(key)} className="text-red-400 hover:text-red-300 p-1"><Trash2 size={12} /></button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* METODE PEMBAYARAN */}
-              <div className="space-y-3 bg-slate-950/50 p-3.5 rounded-xl border border-slate-800">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-400">Metode Bayar:</span>
-                  <div className="flex gap-1.5">
-                    {["CASH", "TRANSFER", "QRIS"].map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setMetodeBayar(m)}
-                        className={`px-3 py-1 rounded-lg text-[11px] font-medium transition ${
-                          metodeBayar === m 
-                            ? "bg-blue-600 text-white shadow-sm" 
-                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800"
-                        }`}
-                      >
-                        {m}
+              {metodeBayar === "CASH" && (
+                <div className="mt-3 space-y-2 border-t border-stone-200 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-stone-600">Uang diterima</span>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={uangDiterima}
+                      onChange={(e) => setUangDiterima(e.target.value)}
+                      className="w-32 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-right text-xs font-bold text-stone-800 outline-none focus:border-stone-500"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-1">
+                    {[20000, 50000, 100000].map((nominal) => (
+                      <button key={nominal} onClick={() => setUangDiterima(String(nominal))} className="rounded-md border border-stone-300 bg-white px-2 py-0.5 text-[10px] text-stone-700 transition hover:bg-stone-100">
+                        {nominal / 1000}k
                       </button>
                     ))}
+                    <button onClick={() => setUangDiterima(String(totalBelanja))} className="rounded-md border border-emerald-700/20 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                      Uang Pas
+                    </button>
                   </div>
                 </div>
+              )}
 
-                {metodeBayar === "CASH" && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400">Uang Diterima (Rp):</span>
-                      <input
-                        type="number"
-                        placeholder="0"
-                        value={uangDiterima}
-                        onChange={(e) => setUangDiterima(e.target.value)}
-                        className="w-36 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-right font-bold text-slate-200 focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div className="flex gap-1 justify-end">
-                      {[20000, 50000, 100000].map((nominal) => (
-                        <button
-                          key={nominal}
-                          onClick={() => setUangDiterima(String(nominal))}
-                          className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-400 px-2 py-0.5 rounded transition"
-                        >
-                          {nominal / 1000}k
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => setUangDiterima(String(totalBelanja))}
-                        className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] text-emerald-400 px-2 py-0.5 rounded transition font-medium"
-                      >
-                        Uang Pas
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {metodeBayar === "TRANSFER" && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                    <label className="text-[11px] text-cyan-400 font-medium flex items-center gap-1">
-                      <CreditCard size={13} /> Pilih Rekening Tujuan:
-                    </label>
-                    <select
-                      value={selectedBank}
-                      onChange={(e) => setSelectedBank(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-                    >
-                      {bankList.map((b, i) => (
-                        <option key={i} value={`${b.bank} - ${b.norek} (a/n ${b.an})`}>
-                          {b.bank} : {b.norek} ({b.an})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {metodeBayar === "QRIS" && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800/80 text-center">
-                    <div className="flex items-center justify-center gap-1.5 text-[11px] text-purple-400 font-medium mb-1">
-                      <QrCode size={13} /> Scan QRIS Pembayaran:
-                    </div>
-                    {qrisImage ? (
-                      <div className="bg-white p-2 rounded-xl inline-block shadow-md">
-                        <img src={qrisImage} alt="QRIS Code" className="w-32 h-32 object-contain mx-auto" />
-                      </div>
-                    ) : (
-                      <p className="text-xs text-red-400 italic bg-slate-900 p-2 rounded-lg">
-                        Gambar QRIS belum di-upload di menu Setting!
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Opsi Cetak Struk Ya / Tidak */}
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                  <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                    <Printer size={13} className="text-emerald-400" /> Cetak Struk Otomatis?
-                  </span>
-                  <button
-                    onClick={() => setAutoCetak(!autoCetak)}
-                    className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
-                      autoCetak 
-                        ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30" 
-                        : "bg-slate-900 text-slate-500 border border-slate-800"
-                    }`}
+              {metodeBayar === "TRANSFER" && (
+                <div className="mt-3 space-y-2 border-t border-stone-200 pt-3">
+                  <label className="flex items-center gap-1 text-[11px] font-medium text-stone-700">
+                    <CreditCard size={12} /> Pilih rekening tujuan
+                  </label>
+                  <select
+                    value={selectedBank}
+                    onChange={(e) => setSelectedBank(e.target.value)}
+                    className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 outline-none focus:border-stone-500"
                   >
-                    {autoCetak ? "YA (Cetak)" : "TIDAK"}
-                  </button>
+                    {bankList.map((b, i) => (
+                      <option key={i} value={`${b.bank} - ${b.norek} (a/n ${b.an})`}>
+                        {b.bank} : {b.norek} ({b.an})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              )}
 
+              {metodeBayar === "QRIS" && (
+                <div className="mt-3 space-y-3 border-t border-stone-200 pt-3 text-center">
+                  <div className="flex items-center justify-between text-left">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                      <QrCode size={15} className="text-violet-600" /> Scan QRIS
+                    </div>
+                    <span className="text-[10px] text-stone-500">Klik gambar untuk memperbesar</span>
+                  </div>
+                  {qrisImage ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowQrisFullscreen(true)}
+                      className="group mx-auto block rounded-3xl border border-violet-200 bg-white p-3 shadow-[0_10px_24px_rgba(117,104,194,0.12)] transition hover:border-violet-400 hover:shadow-[0_14px_30px_rgba(117,104,194,0.2)]"
+                      aria-label="Perbesar QRIS"
+                    >
+                      <Image src={qrisImage} alt="QRIS Code" width={220} height={220} unoptimized className="h-52 w-52 object-contain sm:h-60 sm:w-60" />
+                    </button>
+                  ) : (
+                    <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-[10px] text-red-700">
+                      Gambar QRIS belum di-upload di menu Setting.
+                    </p>
+                  )}
+                  {qrisImage && <p className="text-sm font-black text-stone-900">Rp {totalBelanja.toLocaleString("id-ID")}</p>}
+                </div>
+              )}
+
+              <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3">
+                <span className="flex items-center gap-1.5 text-[11px] text-stone-600">
+                  <Printer size={12} className="text-stone-700" /> Thermal otomatis?
+                </span>
+                <button
+                  onClick={() => setAutoCetak(!autoCetak)}
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold ${autoCetak ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200" : "bg-stone-100 text-stone-600 ring-1 ring-stone-200"}`}
+                >
+                  {autoCetak ? "YA" : "TIDAK"}
+                </button>
+              </div>
             </div>
 
-            {/* TOTAL & TOMBOL CHECKOUT */}
-            <div className="pt-4 border-t border-slate-800 space-y-3 mt-4">
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Total Belanja:</span>
-                  <span className="font-semibold text-slate-200">Rp {totalBelanja.toLocaleString()}</span>
+            <div className="mt-4 border-t border-stone-200 pt-4">
+              <div className="space-y-2 text-[11px] text-stone-700">
+                <div className="flex items-center justify-between">
+                  <span>Total Belanja</span>
+                  <span className="font-semibold text-stone-900">Rp {totalBelanja.toLocaleString()}</span>
                 </div>
-                
                 {metodeBayar === "CASH" && (
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span>Kembalian:</span>
-                    <span className={`font-bold ${kembalian < 0 && nominalUang > 0 ? "text-red-400" : "text-cyan-400"}`}>
-                      Rp {kembalian.toLocaleString()}
-                    </span>
+                  <div className="flex items-center justify-between">
+                    <span>Kembalian</span>
+                    <span className={kembalian < 0 && nominalUang > 0 ? "font-bold text-red-600" : "font-bold text-stone-700"}>Rp {kembalian.toLocaleString()}</span>
                   </div>
                 )}
               </div>
 
-              <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-                <span className="text-xs font-bold text-slate-300">Grand Total:</span>
-                <span className="text-lg font-extrabold text-emerald-400">Rp {totalBelanja.toLocaleString()}</span>
+              <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-stone-500">Grand total</span>
+                <span className="text-xl font-black text-stone-900">Rp {totalBelanja.toLocaleString()}</span>
               </div>
 
               <button
                 onClick={handleCheckout}
                 disabled={isSubmitting || cart.length === 0}
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 text-xs"
+                className="mt-4 w-full rounded-2xl bg-stone-900 px-4 py-3 text-xs font-bold text-white shadow-[0_14px_30px_rgba(41,35,34,0.12)] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <CheckCircle size={16} /> {isSubmitting ? "Memproses..." : "Proses Pembayaran (Checkout)"}
+                <span className="flex items-center justify-center gap-2">
+                  <CheckCircle size={16} /> {isSubmitting ? "Memproses..." : "Proses Pembayaran"}
+                </span>
               </button>
             </div>
-          </div>
-
+          </aside>
         </div>
       </div>
-
-      {/* FOOTER BRANDS / COPYRIGHT */}
-      <footer className="text-center border-t border-slate-900 pt-4 text-xs text-slate-600">
-        POS Bengkel Enterprise System • Crafted with precision by <span className="text-slate-400 font-semibold">EL Tech</span>
-      </footer>
+      {showQrisFullscreen && qrisImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/70 p-4 backdrop-blur-sm" onClick={() => setShowQrisFullscreen(false)}>
+          <div className="relative rounded-[30px] bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setShowQrisFullscreen(false)} className="absolute -right-2 -top-2 rounded-full bg-stone-900 px-3 py-1.5 text-sm font-bold text-white shadow-lg">×</button>
+            <p className="mb-3 text-center text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Scan QRIS Pembayaran</p>
+            <Image src={qrisImage} alt="QRIS Code Fullscreen" width={420} height={420} unoptimized className="h-[min(78vw,420px)] w-[min(78vw,420px)] object-contain" />
+            <p className="mt-3 text-center text-lg font-black text-stone-900">Rp {totalBelanja.toLocaleString("id-ID")}</p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Bengkel Josjis icon</title>
+  <desc id="desc">Neon motorcycle and gear mark for Bengkel Josjis</desc>
+  <defs>
+    <linearGradient id="neon" x1="70" y1="80" x2="430" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#45f5ff"/>
+      <stop offset=".48" stop-color="#7c9dff"/>
+      <stop offset="1" stop-color="#ff526d"/>
+    </linearGradient>
+    <linearGradient id="gear" x1="120" y1="300" x2="280" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#48efff"/>
+      <stop offset="1" stop-color="#4785de"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="476" height="476" rx="112" fill="#101b38" stroke="#31466e" stroke-width="16"/>
+  <g fill="none" stroke="url(#neon)" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <circle cx="157" cy="365" r="61" stroke-width="14"/>
+    <circle cx="388" cy="365" r="61" stroke-width="14"/>
+    <path d="M98 365h-24c-12 0-20-13-14-24l18-34c10-19 27-31 48-35l99-18 69-51c18-14 39-22 62-22h34c13 0 20 15 12 25l-27 33 44 19c16 7 28 20 36 35l15 30-44 0-37-30-42 52h-135l-34-53-72 16c-18 4-30 13-38 30l-14 27z" stroke-width="13"/>
+    <path d="M226 253l71-38 61 5 46 21-65 8-44 34h-69" stroke-width="12"/>
+    <path d="M315 194l35-44 35 19 29 42" stroke-width="12"/>
+    <path d="M306 328l36-31 39 0 28 29" stroke-width="12"/>
+    <path d="M80 429h358" stroke-width="8" opacity=".8"/>
+  </g>
+  <g transform="translate(143 350)">
+    <circle r="54" fill="#14264a" stroke="url(#gear)" stroke-width="12"/>
+    <circle r="26" fill="none" stroke="#45eaff" stroke-width="8"/>
+    <circle r="9" fill="#ff6c80"/>
+    <path d="M0-78v-18M0 78v18M78 0h18M-78 0h-18M55-55l13-13M-55 55l-13 13M55 55l13 13M-55-55l-13-13" stroke="url(#gear)" stroke-width="16" stroke-linecap="round"/>
+  </g>
+</svg>

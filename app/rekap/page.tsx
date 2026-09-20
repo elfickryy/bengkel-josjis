@@ -3,12 +3,13 @@ import { useState, useEffect, useMemo } from "react";
 import { getRekapTransaksi } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { 
-  ArrowLeft, DollarSign, RefreshCw, ShoppingBag, 
+  ArrowLeft, DollarSign, RefreshCw, 
   Calendar as CalendarIcon, Filter, Printer, RotateCcw, 
   Eye, Settings, Search, Download, FileText, TrendingUp, Package
 } from "lucide-react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import { printReceipt } from "@/utils/printer";
 
 export default function RekapPage() {
   const [rekapList, setRekapList] = useState<any[]>([]);
@@ -22,6 +23,7 @@ export default function RekapPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [modalDetail, setModalDetail] = useState<any>(null);
+  const [thermalPrinting, setThermalPrinting] = useState(false);
 
   const loadRekap = async () => {
     setLoading(true);
@@ -150,11 +152,17 @@ export default function RekapPage() {
         <head>
           <title>Nota - ${trx.nomor_nota}</title>
           <style>
-            body { font-family: monospace; font-size: 12px; width: 280px; padding: 10px; margin: 0; }
+            @page { size: 80mm auto; margin: 0; }
+            * { box-sizing: border-box; }
+            html, body { width: 80mm; margin: 0; padding: 0; }
+            body { font-family: "Courier New", monospace; font-size: 11px; padding: 5mm 4mm; color: #111; }
             .center { text-align: center; }
-            .line { border-bottom: 1px dashed #000; margin: 8px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            table { width: 100%; font-size: 11px; }
+            .line { border-bottom: 1px dashed #000; margin: 6px 0; }
+            .flex { display: flex; justify-content: space-between; gap: 8px; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            td { vertical-align: top; padding: 1px 0; }
+            td:last-child { text-align: right; white-space: nowrap; }
+            h3, p { overflow-wrap: anywhere; }
           </style>
         </head>
         <body onload="window.print(); window.close();">
@@ -183,6 +191,39 @@ export default function RekapPage() {
       </html>
     `);
     printWindow.document.close();
+  };
+
+  const cetakNotaThermal = async (trx: any) => {
+    const savedConfig = localStorage.getItem("bengkel_config");
+    const config = savedConfig ? JSON.parse(savedConfig) : {};
+    setThermalPrinting(true);
+
+    try {
+      const success = await printReceipt({
+        storeName: config.namaBengkel || "BENGKEL JOSJIS",
+        storeAddress: config.alamatBengkel || "Jl. Raya Bengkel No. 32",
+        storePhone: config.teleponBengkel || "",
+        notaNo: trx.nomor_nota,
+        date: new Date(trx.tanggal).toLocaleString("id-ID"),
+        cashier: trx.mekanik || "Admin",
+        plateNumber: trx.plat_nomor || "-",
+        items: (trx.items || []).map((item: any) => ({
+          name: item.nama_item,
+          qty: Number(item.qty || 0),
+          price: Number(item.harga_satuan || 0),
+          subtotal: Number(item.subtotal || 0),
+        })),
+        total: Number(trx.total_belanja || 0),
+        cash: Number(trx.total_belanja || 0),
+        change: 0,
+        paymentMethod: trx.metode_bayar || "-",
+        footerMessage: config.pesanStruk || "Terima Kasih Atas Kunjungan Anda!",
+      });
+
+      if (!success) alert("Printer thermal tidak terdeteksi. Anda dapat memakai Cetak Browser sebagai cadangan.");
+    } finally {
+      setThermalPrinting(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -532,12 +573,21 @@ export default function RekapPage() {
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-              <button
-                onClick={() => cetakNota(modalDetail)}
-                className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-medium py-2.5 rounded-lg transition"
-              >
-                <Printer size={16} /> Cetak Struk Thermal
-              </button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => cetakNotaThermal(modalDetail)}
+                  disabled={thermalPrinting}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 py-2.5 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Printer size={16} /> {thermalPrinting ? "Mengirim..." : "Cetak Thermal"}
+                </button>
+                <button
+                  onClick={() => cetakNota(modalDetail)}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white py-2.5 font-medium text-stone-700 transition hover:bg-stone-100"
+                >
+                  <Printer size={16} /> Cetak Browser
+                </button>
+              </div>
             </div>
             
           </div>

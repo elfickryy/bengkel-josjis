@@ -1,12 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Tambahkan baris ini biar Next.js gak protes soal direktori home
+  output: 'export', // Biar folder 'out' otomatis terbuat untuk Capacitor
   turbopack: {
     root: __dirname,
   },
+  allowedDevOrigins: ['192.168.0.114'], // Tambahkan IP network kamu di sini
 };
 
-export default function nextConfigWrapper() {
-  return nextConfig;
-}
+export default nextConfig;

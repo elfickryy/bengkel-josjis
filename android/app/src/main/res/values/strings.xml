@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">bengkel josjis</string>
+    <string name="title_activity_main">bengkel josjis</string>
+    <string name="package_name">com.eltech.bengkeljosjis</string>
+    <string name="custom_url_scheme">com.eltech.bengkeljosjis</string>
+</resources>

@@ -1,11 +1,13 @@
 import { supabase } from "./supabase";
 
 // 1. Ambil Stok Barang
-export async function getStokBarang() {
-  const { data, error } = await supabase
+export async function getStokBarang(includeInactive = false) {
+  let query = supabase
     .from("part")
     .select("*")
     .order("nama_part", { ascending: true });
+  if (!includeInactive) query = query.eq("aktif", true);
+  const { data, error } = await query;
 
   if (error) {
     console.error("Gagal ambil stok:", error.message);
@@ -17,6 +19,12 @@ export async function getStokBarang() {
 // 2. Tambah Part / Restock Barang Baru ke Supabase
 export async function tambahPart(payload: any) {
   try {
+    if (!payload.namaPart?.trim() || !payload.kategori?.trim()) {
+      return { status: "error", message: "Nama part dan kategori wajib diisi." };
+    }
+    if (Number(payload.hargaBeli) < 0 || Number(payload.hargaJual) < 0 || Number(payload.stok) < 0) {
+      return { status: "error", message: "Harga dan stok tidak boleh negatif." };
+    }
     const { error } = await supabase.from("part").insert([
       {
         kode_part: payload.kodePart,
@@ -136,4 +144,79 @@ export async function simpanTransaksi(payload: any) {
     console.error("Error checkout:", err);
     return { status: "error", message: err.message };
   }
+}
+
+export async function restockPart(id: string | number, jumlah: number) {
+  const { data, error } = await supabase.from("part").select("stok").eq("id", id).single();
+  if (error || !data) return { status: "error", message: error?.message || "Part tidak ditemukan" };
+
+  const stokSebelum = Number(data.stok || 0);
+  const stokSesudah = stokSebelum + jumlah;
+
+  const { error: updateError } = await supabase
+    .from("part")
+    .update({ stok: stokSesudah })
+    .eq("id", id);
+
+  if (updateError) return { status: "error", message: updateError.message };
+
+  const { error: historyError } = await supabase.from("restock_history").insert({
+    part_id: id,
+    jumlah,
+    stok_sebelum: stokSebelum,
+    stok_sesudah: stokSesudah,
+    keterangan: "Restock manual",
+  });
+
+  return historyError
+    ? { status: "error", message: "Stok berubah, tetapi riwayat restock gagal disimpan: " + historyError.message }
+    : { status: "success" };
+}
+
+export async function updatePart(id: string | number, payload: { namaPart: string; kategori: string; hargaBeli: number; hargaJual: number }) {
+  const { error } = await supabase
+    .from("part")
+    .update({
+      nama_part: payload.namaPart,
+      kategori: payload.kategori,
+      harga_beli: Number(payload.hargaBeli),
+      harga_jual: Number(payload.hargaJual),
+    })
+    .eq("id", id);
+
+  return error
+    ? { status: "error", message: error.message }
+    : { status: "success" };
+}
+
+export async function setPartActive(id: string | number, aktif: boolean) {
+  const { error } = await supabase.from("part").update({ aktif }).eq("id", id);
+  return error
+    ? { status: "error", message: error.message }
+    : { status: "success" };
+}
+
+export async function getRestockHistory() {
+  const { data, error } = await supabase
+    .from("restock_history")
+    .select("*, part:part_id (nama_part, kode_part)")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    console.error("Gagal mengambil riwayat restock:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function removeCategory(category: string) {
+  const { error } = await supabase
+    .from("part")
+    .update({ kategori: "Umum" })
+    .eq("kategori", category);
+
+  return error
+    ? { status: "error", message: error.message }
+    : { status: "success" };
 }

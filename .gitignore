@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# electron & builds
+dist/
+dist/*
+*.exe
+*.apk
+*.zip
+*.dmg
+
+# android builds
+android/app/build/
+android/build/
+android/.gradle/
+android/.idea/
+
+.vercel
+.env*

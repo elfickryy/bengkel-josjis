@@ -34,3 +34,14 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Inventory migration
+
+Before using **Riwayat Restock** or **Nonaktifkan Part**, run `supabase/migrations/20260920_inventory_hardening.sql` once in the Supabase SQL Editor.
+
+This adds the `aktif` flag to `part` and creates the `restock_history` table.
+
+## Verification
+
+- `npm run lint` checks source code; image optimization warnings may remain.
+- `npm run build` creates the production build.

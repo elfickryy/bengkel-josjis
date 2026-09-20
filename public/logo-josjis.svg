@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 260" role="img" aria-labelledby="title desc">
+  <title id="title">Bengkel Josjis by EL Tech</title>
+  <desc id="desc">Bengkel Josjis motorcycle workshop logo</desc>
+  <defs>
+    <linearGradient id="text" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#17294d"/><stop offset="1" stop-color="#4c5f91"/></linearGradient>
+  </defs>
+  <g transform="translate(12 12) scale(.46)">
+    <rect x="18" y="18" width="476" height="476" rx="112" fill="#101b38" stroke="#31466e" stroke-width="16"/>
+    <path d="M98 365h-24c-12 0-20-13-14-24l18-34c10-19 27-31 48-35l99-18 69-51c18-14 39-22 62-22h34c13 0 20 15 12 25l-27 33 44 19c16 7 28 20 36 35l15 30-44 0-37-30-42 52h-135l-34-53-72 16c-18 4-30 13-38 30l-14 27z" fill="none" stroke="#49efff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M226 253l71-38 61 5 46 21-65 8-44 34h-69M315 194l35-44 35 19 29 42M306 328l36-31 39 0 28 29M80 429h358" fill="none" stroke="#ff5d78" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="157" cy="365" r="61" fill="none" stroke="#49efff" stroke-width="14"/><circle cx="388" cy="365" r="61" fill="none" stroke="#ff5d78" stroke-width="14"/>
+    <circle cx="143" cy="350" r="45" fill="#14264a" stroke="#49efff" stroke-width="10"/><circle cx="143" cy="350" r="20" fill="none" stroke="#49efff" stroke-width="7"/>
+  </g>
+  <text x="295" y="125" fill="url(#text)" font-family="Arial, Helvetica, sans-serif" font-size="76" font-weight="800" letter-spacing="2">BENGKEL JOSJIS</text>
+  <text x="300" y="184" fill="#4c5874" font-family="Arial, Helvetica, sans-serif" font-size="34" letter-spacing="3">BY EL TECH</text>
+</svg>
