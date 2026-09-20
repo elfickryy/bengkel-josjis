@@ -12,6 +12,7 @@
     "package:win": "electron-builder --win --x64"
   },
   "dependencies": {
+    "@ascentio-it/capacitor-bluetooth-serial": "^8.0.1",
     "@awesome-cordova-plugins/bluetooth-serial": "^9.6.0",
     "@capacitor-community/bluetooth-le": "^8.3.0",
     "@capacitor/android": "^8.5.2",
