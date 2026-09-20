@@ -1,0 +1,9 @@
+node_modules/
+dist/
+android/
+.next/
+*.exe
+*.apk
+*.asar
+icon.ico
+main.js
